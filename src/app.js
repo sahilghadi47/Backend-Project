@@ -22,7 +22,14 @@ app.use(
         limit: "16kb",
     })
 );
+app.use(express.static("Public"));
 
 app.use(cookieParser());
+
+//Importing Routers
+import userRouter from "./routes/user.routes.js";
+
+//Declaring routers
+app.use("/api/v1/user", userRouter);
 
 export { app };
