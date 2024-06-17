@@ -3,6 +3,23 @@ import { ApiError as Error } from "../utils/ApiError.js";
 import { ApiResponse as Response } from "../utils/ApiResponse.js";
 import { User } from "../models/user.models.js";
 import { uploadToCloudinary } from "../utils/cloudinary.js";
+
+// Generate Access and Refresh token
+const generateAccessAndRefreshToken = async (user_id) => {
+    try {
+        const user = await User.findById(user_id);
+        const accessToken = user.generateAccessToken();
+        const refreshToken = user.generateRefreshToken();
+        if (!accessToken || !refreshToken) {
+            throw new Error(500, "Tokens creation failed");
+        }
+        return { accessToken, refreshToken };
+    } catch (error) {
+        throw new Error(500, error || "Access token generation failed");
+    }
+};
+
+// user registration method at user/register
 const registerUser = asyncHandler(async (req, res) => {
     // get user details from frontend
 
@@ -54,10 +71,6 @@ const registerUser = asyncHandler(async (req, res) => {
         "-password -refreshToken"
     );
 
-    console.log("createdUser :");
-    console.log(createdUser);
-    console.log("\n");
-
     // if server failed to register user
     if (!createdUser) {
         throw new Error(500, "Something went wrong while registering the user");
@@ -68,4 +81,70 @@ const registerUser = asyncHandler(async (req, res) => {
         .json(new Response(200, createdUser, "User registered Successfully"));
 });
 
-export { registerUser };
+// user login method at user/login
+const loginUser = asyncHandler(async (req, res) => {
+    // get data from body
+    const { userName, password } = req.body;
+    // check for inputfields
+    if (!userName) {
+        throw new Error(400, "Username is required");
+    }
+    // find user in database
+    const user = await User.findOne({ userName });
+    if (!user) {
+        throw new Error(401, "User doesn't exist");
+    }
+    // check user password
+    const isPasswordCorrect = await user.isPasswordCorrect(password);
+    if (!isPasswordCorrect) {
+        throw new Error(401, "Password mismatch");
+    }
+    // generate access and refresh tokans
+    const { accessToken, refreshToken } = await generateAccessAndRefreshToken(
+        user._id
+    );
+    // add refresh token to userDatabase
+    user.refreshToken = refreshToken;
+    await user.save();
+    const loggedUser = await User.findById(user._id).select(
+        "-password -refreshToken"
+    );
+    // return user in response
+    const options = {
+        httpOnly: true,
+        secure: true,
+    };
+    res.status(200)
+        .cookie("refreshToken", refreshToken, options)
+        .cookie("accessToken", accessToken, options)
+        .json(new Response(201, loggedUser, "user logged in success-fully"));
+});
+
+// user logout method at user/logout
+const logoutUser = asyncHandler(async (req, res) => {
+    const user = req.user;
+    await User.findByIdAndUpdate(
+        user._id,
+        {
+            $unset: {
+                refreshToken: 1,
+            },
+        },
+        {
+            new: true,
+        }
+    );
+
+    const options = {
+        httpOnly: true,
+        secure: true,
+    };
+
+    return res
+        .status(200)
+        .clearCookie("accessToken", options)
+        .clearCookie("refreshToken", options)
+        .json(new Response(200, {}, "User logged Out"));
+});
+
+export { registerUser, loginUser, logoutUser };
