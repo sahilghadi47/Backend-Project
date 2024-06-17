@@ -3,9 +3,10 @@ import { ApiError as Error } from "../utils/ApiError.js";
 import { ApiResponse as Response } from "../utils/ApiResponse.js";
 import { User } from "../models/user.models.js";
 import { uploadToCloudinary } from "../utils/cloudinary.js";
+import jwt from "jsonwebtoken";
 
 // Generate Access and Refresh token
-const generateAccessAndRefreshToken = async (user_id) => {
+const generateAccessAndRefreshTokens = async (user_id) => {
     try {
         const user = await User.findById(user_id);
         const accessToken = user.generateAccessToken();
@@ -100,7 +101,7 @@ const loginUser = asyncHandler(async (req, res) => {
         throw new Error(401, "Password mismatch");
     }
     // generate access and refresh tokans
-    const { accessToken, refreshToken } = await generateAccessAndRefreshToken(
+    const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(
         user._id
     );
     // add refresh token to userDatabase
@@ -147,4 +148,71 @@ const logoutUser = asyncHandler(async (req, res) => {
         .json(new Response(200, {}, "User logged Out"));
 });
 
-export { registerUser, loginUser, logoutUser };
+// refresh access token if it has been expired
+const refreshAccessToken = asyncHandler(async (req, res) => {
+    // get refresh token from cookies
+    const incomingRefreshToken =
+        req.cookies.refreshToken || req.body.refreshToken;
+    console.log(incomingRefreshToken);
+    console.log(req.cookies);
+    if (!incomingRefreshToken) {
+        throw new Error(400, "Unathorised request");
+    }
+    // decode refresh token
+    try {
+        const decodedToken = jwt.verify(
+            incomingRefreshToken,
+            process.env.REFRESH_TOKEN_SECRET
+        );
+
+        if (!decodedToken) {
+            throw new Error(400, "Invalid refresh token");
+        }
+
+        // get user from refresh token
+        const user = await User.findById(decodedToken?._id);
+
+        if (!user) {
+            throw new Error(400, "User not found");
+        }
+
+        // validate provided and stored refresh token
+        const savedRefreshToken = user?.refreshToken;
+        if (!savedRefreshToken) {
+            throw new Error(500, "Refresh token is not available");
+        }
+
+        if (savedRefreshToken !== incomingRefreshToken) {
+            throw new Error(400, "Refresh token is expired");
+        }
+
+        // generate new access token and refresh token
+        const { accessToken, refreshToken } =
+            await generateAccessAndRefreshTokens(user._id);
+        // add refresh token to userDatabase
+        user.refreshToken = refreshToken;
+        await user.save();
+        const loggedUser = await User.findById(user._id).select(
+            "-password -refreshToken"
+        );
+        // return user in response
+        const options = {
+            httpOnly: true,
+            secure: true,
+        };
+        res.status(200)
+            .cookie("refreshToken", refreshToken, options)
+            .cookie("accessToken", accessToken, options)
+            .json(
+                new Response(
+                    201,
+                    loggedUser,
+                    "access token refreshed successfully"
+                )
+            );
+    } catch (error) {
+        throw new Error(400, error.message || "access token refreshing failed");
+    }
+});
+
+export { registerUser, loginUser, logoutUser, refreshAccessToken };
