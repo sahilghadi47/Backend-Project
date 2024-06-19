@@ -115,7 +115,8 @@ const loginUser = asyncHandler(async (req, res) => {
         httpOnly: true,
         secure: true,
     };
-    res.status(200)
+    return res
+        .status(200)
         .cookie("refreshToken", refreshToken, options)
         .cookie("accessToken", accessToken, options)
         .json(new Response(201, loggedUser, "user logged in success-fully"));
@@ -200,7 +201,8 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
             httpOnly: true,
             secure: true,
         };
-        res.status(200)
+        return res
+            .status(200)
             .cookie("refreshToken", refreshToken, options)
             .cookie("accessToken", accessToken, options)
             .json(
@@ -213,6 +215,30 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
     } catch (error) {
         throw new Error(400, error.message || "access token refreshing failed");
     }
+});
+
+const changeCurrentPassword = asyncHandler(async (req, res) => {
+    const { oldPassword, newPassword } = req.body;
+
+    const user = await User.findById(req.user?._id);
+    const isPasswordCorrect = user.isPasswordCorrect(oldPassword);
+
+    if (!isPasswordCorrect) {
+        throw new Error(400, "Invalid old password");
+    }
+
+    user.password = newPassword;
+    await user.save({ validateBeforeSave: false });
+
+    return res
+        .status(200)
+        .json(new Response(200, req.user, "password changed successfully"));
+});
+
+const getCurrentUser = asyncHandler(async (req, res) => {
+    return res
+        .status(200)
+        .json(new Response(200, req.user, "user fetched successfully"));
 });
 
 export { registerUser, loginUser, logoutUser, refreshAccessToken };
