@@ -321,6 +321,66 @@ const updateCoverImage = asyncHandler(async (req, res) => {
         .json(new Response(200, user, "Cover image updated successfully"));
 });
 
+const getUserChannelDetails = asyncHandler(async (req, res) => {
+    const { userName } = req.params;
+
+    if (!userName?.trim()) {
+        throw new Error(400, "Username is required");
+    }
+
+    const channel = await User.aggregate([
+        {
+            $match: { userName },
+        },
+        {
+            $lookup: {
+                from: "subscriptions",
+                localField: "_id",
+                foreignField: "subscriber",
+                as: "subscriberTo",
+            },
+        },
+        {
+            $lookup: {
+                from: "subscriptions",
+                localField: "_id",
+                foreignField: "channel",
+                as: "subscribers",
+            },
+        },
+        {
+            $addFields: {
+                subscriberCount: { $size: "$subscribers" },
+                subscriptionsCount: { $size: "$subscriberTo" },
+                isSubscribed: {
+                    $cond: {
+                        if: { $in: [req.user?._id, "$subscribers.subscriber"] },
+                        then: true,
+                        else: false,
+                    },
+                },
+            },
+        },
+        {
+            $project: {
+                userName: 1,
+                fullName: 1,
+                avatar: 1,
+                coverImage: 1,
+                subscriberCount: 1,
+                subscriptionsCount: 1,
+                isSubscribed: 1,
+            },
+        },
+    ]);
+    if (!channel?.length) {
+        throw new Error(400, "Channel not found");
+    }
+    return res
+        .status(200)
+        .json(new Response(200, channel[0], "Channel fetched successfully"));
+});
+
 export {
     registerUser,
     loginUser,
@@ -331,4 +391,5 @@ export {
     changeCurrentPassword,
     updateAvatarImage,
     updateCoverImage,
+    getUserChannelDetails,
 };
