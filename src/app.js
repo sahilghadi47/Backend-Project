@@ -28,8 +28,8 @@ app.use(cookieParser());
 
 //Importing Routers
 import userRouter from "./routes/user.routes.js";
-
+import videoRouter from "./routes/video.routes.js";
 //Declaring routers
 app.use("/api/v1/user", userRouter);
-
+app.use("/api/v1/vidoes", videoRouter);
 export { app };
